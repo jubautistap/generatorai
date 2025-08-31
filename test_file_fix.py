@@ -4,9 +4,10 @@
 """
 import asyncio
 import logging.config
+from pathlib import Path
+
 from config import LOGGING_CONFIG, AGENT_ROLES
 from agents import BaseAgent
-from pathlib import Path
 from rich.console import Console
 
 # Настраиваем логирование
@@ -15,7 +16,8 @@ logger = logging.getLogger(__name__)
 
 console = Console()
 
-async def test_devops_files():
+
+def test_devops_files():
     """Тестирует создание DevOps файлов с правильными именами"""
     
     console.print("[bold blue]🧪 ТЕСТ ИСПРАВЛЕННОЙ ЛОГИКИ ФАЙЛОВ[/bold blue]")
@@ -93,7 +95,9 @@ jobs:
         
         # Тестируем функцию создания файлов
         context = {"project_name": "FileFixTest"}
-        files_created = await devops_agent._create_files_from_response(devops_response, context)
+        files_created = asyncio.run(
+            devops_agent._create_files_from_response(devops_response, context)
+        )
         
         console.print(f"\n[green]✅ РЕЗУЛЬТАТЫ:[/green]")
         console.print(f"[white]Создано файлов: {len(files_created)}[/white]")
@@ -119,4 +123,4 @@ jobs:
         logger.error(f"Ошибка теста: {e}", exc_info=True)
 
 if __name__ == "__main__":
-    asyncio.run(test_devops_files())
+    test_devops_files()
