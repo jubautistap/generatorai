@@ -22,20 +22,21 @@ class CodeExtractor:
     """Извлекает код из текстовых ответов агентов"""
     
     @staticmethod
-    def extract_code_blocks(text: str) -> List[Tuple[str, str, str]]:
+    def extract_code_blocks(text: str) -> List[Tuple[str, str, Optional[str]]]:
         """
         Извлекает блоки кода из текста
-        Возвращает список (язык, код, описание)
+        Возвращает список (язык, код, имя файла)
         """
         code_blocks = []
         
-        # Паттерн для блоков кода с ```
-        pattern = r'```(\w*)\n?(.*?)\n?```'
+        # Паттерн для блоков кода вида ```lang or ```lang: filename
+        # захватывает язык и необязательное имя файла после двоеточия
+        pattern = r'```(\w+)(?::\s*([\w/\.\-]+))?\n(.*?)\n```'
         matches = re.findall(pattern, text, re.DOTALL)
-        
-        for language, code in matches:
+
+        for language, filename, code in matches:
             if code.strip():
-                code_blocks.append((language or 'text', code.strip(), ''))
+                code_blocks.append((language or 'text', code.strip(), filename or None))
         
         # Если нет блоков с ```, ищем другие паттерны
         if not code_blocks:
@@ -541,15 +542,15 @@ class ProjectGenerator:
         """🔥 НОВОЕ: Извлекает операции создания файлов из блоков кода"""
         ops: List[Dict[str, Any]] = []
         
-        # Используем такой же паттерн блоков кода
-        pattern = r"```(\w*)\n(.*?)\n```"
+        # Паттерн поддерживает синтаксис ```lang``` и ```lang: filename```
+        pattern = r"```(\w+)(?::\s*([\w/\.\-]+))?\n(.*?)\n```"
         matches = re.findall(pattern, text, re.DOTALL)
-        
-        for i, (language, code) in enumerate(matches):
+
+        for i, (language, filename, code) in enumerate(matches):
             if not code.strip():
                 continue
-                
-            filename = self._extract_filename_from_code(code, language or 'text')
+
+            filename = filename or self._extract_filename_from_code(code, language or 'text')
             # 🔥 ИСПРАВЛЕНО: Передаем agent_id для правильного размещения
             rel_path = self._map_agent_language_to_path(agent_id, language or 'text', filename, i)
             

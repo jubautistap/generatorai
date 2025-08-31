@@ -543,52 +543,32 @@ class BaseAgent(ABC):
     def _extract_code_blocks(self, text: str) -> List[tuple]:
         """Извлекает блоки кода из текста"""
         code_blocks = []
-        
-        # 1. Ищем блоки кода с ```markdown: filename (с пробелом после двоеточия)
-        markdown_pattern = r'```markdown:\s*([\w/\.\-]+)\n(.*?)\n```'
-        markdown_matches = re.findall(markdown_pattern, text, re.DOTALL)
-        
-        logger.debug(f"🔍 Поиск markdown блоков: найдено {len(markdown_matches)} совпадений")
-        for filename, code in markdown_matches:
-            if code.strip():
-                code_blocks.append(('markdown', code.strip(), filename))
-                logger.debug(f"✅ Найден markdown блок: файл={filename}, размер={len(code)}")
-        
-        # 2. Ищем блоки кода с ```language: filename (с пробелом после двоеточия)
-        language_filename_pattern = r'```(\w+):\s*([\w/\.\-]+)\n(.*?)\n```'
-        language_filename_matches = re.findall(language_filename_pattern, text, re.DOTALL)
-        
-        logger.debug(f"🔍 Поиск language:filename блоков: найдено {len(language_filename_matches)} совпадений")
-        for language, filename, code in language_filename_matches:
-            if code.strip():
-                code_blocks.append((language, code.strip(), filename))
-                logger.debug(f"✅ Найден блок кода: язык={language}, файл={filename}, размер={len(code)}")
-        
-        # 3. Ищем обычные блоки кода с ``` (более гибкий паттерн)
-        pattern = r'```(\w*)\n(.*?)\n```'
+
+        # Ищем блоки кода вида ```language``` или ```language: filename```
+        pattern = r'```(\w+)(?::\s*([\w/\.\-]+))?\n(.*?)\n```'
         matches = re.findall(pattern, text, re.DOTALL)
-        
+
         logger.debug(f"Найдено блоков кода: {len(matches)}")
-        
-        for language, code in matches:
+
+        for language, filename, code in matches:
             if code.strip():
                 # Пытаемся извлечь имя файла из комментариев или из первой строки
-                filename = self._extract_filename_from_code(code, language or 'text')
+                filename = filename or self._extract_filename_from_code(code, language or 'text')
                 code_blocks.append((language or 'text', code.strip(), filename))
                 logger.debug(f"Найден блок кода: язык={language or 'text'}, размер={len(code)}, файл={filename}")
-        
-        # 4. Дополнительный поиск - ищем блоки с markdown: filename в тексте
+
+        # 2. Дополнительный поиск - ищем блоки с markdown: filename в тексте
         if not code_blocks:
             logger.debug("Блоки ``` не найдены, ищем markdown: filename в тексте...")
             markdown_inline_pattern = r'markdown:\s*([\w/\.\-]+)\n(.*?)(?=\n\n|\n#|\Z)'
             markdown_inline_matches = re.findall(markdown_inline_pattern, text, re.DOTALL | re.MULTILINE)
-            
+
             for filename, code in markdown_inline_matches:
                 if code.strip() and len(code.strip()) > 20:  # Минимум 20 символов
                     code_blocks.append(('markdown', code.strip(), filename))
                     logger.debug(f"✅ Найден inline markdown: файл={filename}, размер={len(code)}")
         
-        # 5. Поиск по самым гибким паттернам - ищем любые упоминания файлов с контентом
+        # 3. Поиск по самым гибким паттернам - ищем любые упоминания файлов с контентом
         if not code_blocks:
             logger.debug("Ищем любые упоминания файлов с контентом...")
             # Паттерн для "filename:" или "filename" с последующим контентом
@@ -601,7 +581,7 @@ class BaseAgent(ABC):
                     code_blocks.append((ext, code.strip(), filename))
                     logger.debug(f"✅ Найден гибкий паттерн: файл={filename}, размер={len(code)}")
         
-        # 6. Поиск по заголовкам и ключевым словам - ищем разделы с именами файлов
+        # 4. Поиск по заголовкам и ключевым словам - ищем разделы с именами файлов
         if not code_blocks:
             logger.debug("Ищем разделы с именами файлов по заголовкам...")
             # Паттерн для заголовков типа "## filename.md" или "### filename.md"
@@ -614,7 +594,7 @@ class BaseAgent(ABC):
                     code_blocks.append((ext, code.strip(), filename))
                     logger.debug(f"✅ Найден заголовок: файл={filename}, размер={len(code)}")
         
-        # 7. Поиск по ключевым словам - ищем упоминания файлов в тексте
+        # 5. Поиск по ключевым словам - ищем упоминания файлов в тексте
         if not code_blocks:
             logger.debug("Ищем упоминания файлов по ключевым словам...")
             # Паттерн для "File: filename" или "Document: filename"
@@ -627,7 +607,7 @@ class BaseAgent(ABC):
                     code_blocks.append((ext, code.strip(), filename))
                     logger.debug(f"✅ Найден по ключевому слову: файл={filename}, размер={len(code)}")
         
-        # 8. Дополнительный поиск - ищем блоки кода без закрывающих ```
+        # 6. Дополнительный поиск - ищем блоки кода без закрывающих ```
         if not code_blocks:
             logger.debug("Блоки ``` не найдены, пытаемся найти код другими способами...")
             # Ищем код после упоминания файлов
