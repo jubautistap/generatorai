@@ -560,64 +560,58 @@ class AgentCoordinator:
         """Выполняет полный цикл разработки с правильным итерационным процессом"""
         if not self.current_project:
             raise ValueError("Нет активного проекта")
-            
+
         console.print(f"[bold green]🔄 Начинаем цикл разработки[/bold green]")
         logger.info(f"⚙️ Конфигурация цикла: таймаут={AGENT_TIMEOUT}с, повторы={AGENT_RETRIES}, макс. итерации={MAX_ITERATIONS}")
-        
+
         try:
             # Выполняем задачи в определенном порядке
             overall_success = False
-            
+
             for iteration in range(MAX_ITERATIONS):
                 self.current_project.current_iteration = iteration + 1
                 console.print(f"\n[bold yellow]📈 Итерация {iteration + 1}/{MAX_ITERATIONS}[/bold yellow]")
-                
-                # 🔥 КРИТИЧНО: Создаем задачи для текущей итерации с ОБНОВЛЁННЫМ контекстом
-                # Это гарантирует, что агенты получат результаты предыдущих итераций
+
+                # Создаем задачи с актуальным контекстом
                 logger.info(f"🔄 Создание задач для итерации {iteration + 1} с обновлённым контекстом...")
                 tasks = self._create_agent_tasks()
                 logger.info(f"✅ Создано {len(tasks)} задач с актуальным контекстом")
-                
-                # Выполняем итерацию
+
                 iteration_success = await self._execute_iteration(tasks)
                 if iteration_success:
                     console.print(f"[green]✓ Итерация {iteration + 1} завершена успешно[/green]")
-                    # Обновляем контекст для следующей итерации (конвейер данных)
                     await self._update_project_context()
-                    # Проверяем качество результата ПОСЛЕ каждой итерации
+
                     if await self._evaluate_results():
                         console.print("[bold green]🎉 Проект готов! Все критерии качества выполнены![/bold green]")
                         self.current_project.status = "completed"
                         overall_success = True
                         break
-                else:
+                    else:
                         if (iteration + 1) >= MIN_SUCCESS_ITERATIONS:
                             console.print(f"[yellow]⚠️ Итерация {iteration + 1}: качество не достигнуто, продолжаем...[/yellow]")
                         else:
                             console.print(f"[blue]📋 Итерация {iteration + 1}: накапливаем результаты...[/blue]")
                 else:
                     console.print(f"[red]❌ Итерация {iteration + 1} завершилась с ошибками[/red]")
-                    # Даже при ошибках обновляем контекст для следующей итерации
-                await self._update_project_context()
-                    # Если это последняя итерация и всё ещё есть ошибки
+                    await self._update_project_context()
                     if iteration == MAX_ITERATIONS - 1:
                         console.print("[red]🛑 Достигнуто максимальное число итераций с ошибками[/red]")
                         break
-                
+
             # Генерируем финальные файлы проекта, если включена финальная сборка
             from config import FINAL_ASSEMBLY_ENABLED
             if FINAL_ASSEMBLY_ENABLED:
-            await self._generate_project_files()
-            
-            # 🔥 НОВОЕ: Этап финального тестирования и валидации
+                await self._generate_project_files()
+
+            # Финальное тестирование и валидация
             if overall_success:
-                console.print(f"\n[bold green]🧪 Запуск финального тестирования и валидации...[/bold green]")
+                console.print("\n[bold green]🧪 Запуск финального тестирования и валидации...[/bold green]")
                 validation_success = await self._run_final_validation()
-                
                 if validation_success:
                     console.print(f"[bold green]✅ Финальная валидация пройдена! Проект готов к использованию![/bold green]")
                     self.current_project.status = "validated"
-            return True
+                    return True
                 else:
                     console.print(f"[red]❌ Финальная валидация не пройдена! Проект требует доработки![/red]")
                     self.current_project.status = "validation_failed"
@@ -626,7 +620,7 @@ class AgentCoordinator:
                 self.current_project.status = "failed"
                 console.print("[red]🛑 Проект не достиг требуемого качества за максимальное число итераций[/red]")
                 return False
-            
+
         except Exception as e:
             logger.error(f"Ошибка в цикле разработки: {e}")
             self.current_project.status = "failed"
@@ -1512,97 +1506,88 @@ class AgentCoordinator:
 
         async def run_single_agent(agent_id: str):
             agent = self.agents[agent_id]
-            # если есть адресная задача — берём её, иначе дефолтную
             if self.directed_queues[agent_id]:
                 task = self.directed_queues[agent_id].pop(0)
                 logger.debug(f"[{agent_id}] Использую адресную задачу: {task.id}")
             else:
                 task = tasks[agent_id]
                 logger.debug(f"[{agent_id}] Использую дефолтную задачу: {task.id}")
+
             logger.info(f"Запуск задачи для агента {agent_id} ({agent.name}) с таймаутом {AGENT_TIMEOUT} секунд")
             attempt = 0
-            last_exc = None
             result = None
             while attempt <= AGENT_RETRIES:
                 try:
-                    logger.debug(f"🕐 Запуск агента {agent_id} с таймаутом {AGENT_TIMEOUT} секунд (попытка {attempt+1}/{AGENT_RETRIES+1})")
-                    res = await asyncio.wait_for(agent.execute_task(task), timeout=AGENT_TIMEOUT)
-                    result = res
+                    logger.debug(
+                        f"🕐 Запуск агента {agent_id} с таймаутом {AGENT_TIMEOUT} секунд (попытка {attempt+1}/{AGENT_RETRIES+1})"
+                    )
+                    result = await asyncio.wait_for(agent.execute_task(task), timeout=AGENT_TIMEOUT)
                     break
                 except asyncio.TimeoutError as e:
-                    last_exc = e
-                    logger.error(f"Таймаут для агента {agent_id} (попытка {attempt+1}/{AGENT_RETRIES+1})", exc_info=True)
-                    # 🔥 НОВОЕ: адаптация при таймауте — уменьшаем нагрузку на следующую попытку
+                    logger.error(
+                        f"Таймаут для агента {agent_id} (попытка {attempt+1}/{AGENT_RETRIES+1})",
+                        exc_info=True,
+                    )
                     self._on_agent_timeout(agent_id, task, attempt)
                 except Exception as e:
-                    last_exc = e
-                    logger.error(f"Ошибка выполнения агента {agent_id} (попытка {attempt+1}/{AGENT_RETRIES+1}): {e}", exc_info=True)
-                    # 🔥 НОВОЕ: классифицируем и ставим адресные задачи на исправление
+                    logger.error(
+                        f"Ошибка выполнения агента {agent_id} (попытка {attempt+1}/{AGENT_RETRIES+1}): {e}",
+                        exc_info=True,
+                    )
                     await self._handle_agent_failure(agent_id, task, str(e))
                 attempt += 1
+
             if result is None:
-                # Не роняем фазу: помечаем как пропущенного и продолжаем
-                self.current_project.agent_status[agent_id] = 'skipped'
+                self.current_project.agent_status[agent_id] = "skipped"
                 logger.warning(f"⏭️ Агент {agent_id} пропущен после исчерпания ретраев")
                 return False
-                    if agent_id not in self.current_project.all_results:
-                        self.current_project.all_results[agent_id] = []
-                    self.current_project.all_results[agent_id].append(result)
-                    if result.success:
-                        console.print(f"[green]✓ {agent.name} завершил задачу[/green]")
-                        logger.info(f"Агент {agent_id} успешно выполнил задачу. Размер вывода: {len(result.output)} символов")
-                
-                # 🔥 НОВОЕ: Проверяем качество результата
-                files_created = len(result.files_created) if result.files_created else 0
-                if files_created == 0:
-                    logger.warning(f"⚠️ Агент {agent_id} не создал файлы, хотя задача выполнена успешно")
-                    # Помечаем как нуждающегося в доработке
-                    self.current_project.agent_status[agent_id] = 'needs_revision'
-                    self.current_project.agent_consecutive_failures[agent_id] = self.current_project.agent_consecutive_failures.get(agent_id, 0) + 1
-                    
-                    # Если это ключевой агент, не переходим к следующим
-                    if agent_id in ["product_owner", "project_manager", "system_architect"]:
-                        logger.error(f"🛑 Ключевой агент {agent_id} не создал файлы - прерываем итерацию")
-                        return False
-                else:
-                    logger.info(f"✅ Агент {agent_id} создал {files_created} файлов")
-                    # 🔥 НОВОЕ: отмечаем статус агента
-                    self.current_project.agent_status[agent_id] = 'completed'
-                    self.current_project.last_success_iteration[agent_id] = self.current_project.current_iteration
-                    self.current_project.agent_consecutive_failures[agent_id] = 0
-                
-                # 🔥 ЛОГИРУЕМ: Если это ключевой агент, готовимся к обновлению контекста
-                if agent_id in ["product_owner", "project_manager", "system_architect", "database_engineer"]:
-                    logger.info(f"🎯 {agent_id} - ключевой агент, контекст будет обновлён для следующих агентов")
-                    else:
-                        console.print(f"[red]❌ {agent.name} не смог выполнить задачу[/red]")
-                        logger.error(f"Агент {agent_id} не смог выполнить задачу. Ошибки: {result.errors}")
-                
-                # 🔥 НОВОЕ: Детальный анализ ошибок агента
-                        for error in result.errors:
-                            console.print(f"[red]  - {error}[/red]")
-                        
-                    # Классифицируем ошибки для лучшего понимания
-                    if "timeout" in error.lower():
-                        logger.warning(f"⏰ {agent_id}: Таймаут выполнения")
-                        self.current_project.validation_warnings.append(f"{agent_id}: Таймаут выполнения")
-                    elif "api" in error.lower() or "network" in error.lower():
-                        logger.warning(f"🌐 {agent_id}: Проблемы с API/сетью")
-                        self.current_project.validation_warnings.append(f"{agent_id}: Проблемы с API/сетью")
-                    elif "syntax" in error.lower() or "parsing" in error.lower():
-                        logger.error(f"🔍 {agent_id}: Синтаксические ошибки")
-                        self.current_project.validation_errors.append(f"{agent_id}: Синтаксические ошибки")
-                    else:
-                        logger.error(f"❓ {agent_id}: Неизвестная ошибка")
-                        self.current_project.validation_errors.append(f"{agent_id}: Неизвестная ошибка")
-                
-                # 🔥 НОВОЕ: помечаем статус агента и не прерываем итерацию полностью
-                self.current_project.agent_status[agent_id] = 'failed'
-                self.current_project.agent_consecutive_failures[agent_id] = self.current_project.agent_consecutive_failures.get(agent_id, 0) + 1
-                logger.warning(f"⚠️ {agent_id} не справился, но продолжаем с другими агентами")
-                # 🔥 НОВОЕ: перенаправляем на цикл исправлений
+
+            if agent_id not in self.current_project.all_results:
+                self.current_project.all_results[agent_id] = []
+            self.current_project.all_results[agent_id].append(result)
+
+            if result.success:
+                console.print(f"[green]✓ {agent.name} завершил задачу[/green]")
+                logger.info(
+                    f"Агент {agent_id} успешно выполнил задачу. Размер вывода: {len(result.output)} символов"
+                )
+            else:
+                console.print(f"[red]❌ {agent.name} не смог выполнить задачу[/red]")
+                logger.error(f"Агент {agent_id} не смог выполнить задачу. Ошибки: {result.errors}")
+                self.current_project.agent_status[agent_id] = "failed"
+                self.current_project.agent_consecutive_failures[agent_id] = (
+                    self.current_project.agent_consecutive_failures.get(agent_id, 0) + 1
+                )
                 await self._handle_agent_failure(agent_id, task, "execution_failed")
                 return False
+
+            files_created = len(result.files_created) if result.files_created else 0
+            if files_created == 0:
+                logger.warning(
+                    f"⚠️ Агент {agent_id} не создал файлы, хотя задача выполнена успешно"
+                )
+                self.current_project.agent_status[agent_id] = "needs_revision"
+                self.current_project.agent_consecutive_failures[agent_id] = (
+                    self.current_project.agent_consecutive_failures.get(agent_id, 0) + 1
+                )
+                if agent_id in ["product_owner", "project_manager", "system_architect"]:
+                    logger.error(
+                        f"🛑 Ключевой агент {agent_id} не создал файлы - прерываем итерацию"
+                    )
+                    return False
+            else:
+                logger.info(f"✅ Агент {agent_id} создал {files_created} файлов")
+                self.current_project.agent_status[agent_id] = "completed"
+                self.current_project.last_success_iteration[agent_id] = (
+                    self.current_project.current_iteration
+                )
+                self.current_project.agent_consecutive_failures[agent_id] = 0
+
+            if agent_id in ["product_owner", "project_manager", "system_architect", "database_engineer"]:
+                logger.info(
+                    f"🎯 {agent_id} - ключевой агент, контекст будет обновлён для следующих агентов"
+                )
+
             return True
 
         if not PARALLEL_EXECUTION:
@@ -1736,8 +1721,8 @@ class AgentCoordinator:
                     # 🔥 НОВОЕ: Анализируем результаты параллельного выполнения
                     phase_success = True
                     for i, res in enumerate(results):
-                progress.advance(task_progress)
-                
+                        progress.advance(task_progress)
+
                         if isinstance(res, Exception):
                             agent_id = phase_agents[i]
                             logger.error(f"❌ {agent_id} завершился с ошибкой: {res}")
@@ -1913,9 +1898,9 @@ class AgentCoordinator:
             
         if failed_agents:
             logger.warning(f"⚠️ Агенты завершились с ошибками: {', '.join(failed_agents)}")
-            
+
         logger.info(f"📋 Продолжаем итерации для достижения требуемого качества (порог: {SUCCESS_THRESHOLD:.1%})")
-                return False
+        return False
                 
         # 2) Проверяем полноту проекта - все необходимые файлы должны быть созданы
         if not await self._check_project_completeness():
