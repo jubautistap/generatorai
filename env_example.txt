@@ -1,0 +1,11 @@
+# DeepSeek API Configuration
+DEEPSEEK_API_KEY=sk-c5f3ad37a5984d08abe0254ce5989d07
+
+# Project Settings  
+PROJECT_OUTPUT_DIR=./generated_projects
+MAX_ITERATIONS=10
+AGENT_TIMEOUT=300
+
+# Logging
+LOG_LEVEL=INFO
+LOG_FILE=./logs/agents.log
