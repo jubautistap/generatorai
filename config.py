@@ -32,7 +32,9 @@ AVAILABLE_MODELS = {
 # Настройки агентов
 MAX_ITERATIONS = int(os.getenv('MAX_ITERATIONS', '10'))  # Максимальное количество циклов
 AGENT_TIMEOUT = int(os.getenv('AGENT_TIMEOUT', '180'))  # Таймаут для каждого агента в секундах (увеличен с 60 до 180)
-CREATE_FILES_DURING_AGENTS = os.getenv('CREATE_FILES_DURING_AGENTS', 'false').lower() == 'true'
+# По умолчанию разрешаем агентам создавать файлы, чтобы проект был
+# сформирован даже без указания переменной окружения.
+CREATE_FILES_DURING_AGENTS = os.getenv('CREATE_FILES_DURING_AGENTS', 'true').lower() == 'true'
 MIN_SUCCESS_ITERATIONS = int(os.getenv('MIN_SUCCESS_ITERATIONS', '2'))  # Минимум итераций до возможности завершить
 AGENT_RETRIES = int(os.getenv('AGENT_RETRIES', '3'))  # Повторы задачи агента при сбое (увеличен с 1 до 3)
 SUCCESS_THRESHOLD = float(os.getenv('SUCCESS_THRESHOLD', '0.7'))  # Порог успешности агентов (70%)
